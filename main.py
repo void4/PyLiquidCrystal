@@ -249,6 +249,10 @@ class LiquidCrystal:
         self.send(value, HIGH)
         return 1 # assume success
 
+    def write_string(self, s):
+        for c in s:
+            self.write(ord(c))
+
     # low level data pushing commands
 
     def send(self, value, mode):
