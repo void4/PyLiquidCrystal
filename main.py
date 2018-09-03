@@ -1,3 +1,9 @@
+from pyfirmata import OUTPUT
+
+from util import BoardWrapper
+
+LOW = 0
+HIGH = 1
 
 # commands
 LCD_CLEARDISPLAY = 0x01
@@ -39,9 +45,12 @@ LCD_5x8DOTS = 0x00
 
 class LiquidCrystal:
 
-    def __init__(self, rs, rw, enable, d0, d1, d2, d3, d4, d5, d6, d7, fourbitmode=False):
-        self.self._rs_pin = rs
-        self.self._rw_pin = rw
+    def __init__(self, board, fourbitmode, rs, rw, enable, d0, d1, d2, d3, d4, d5, d6, d7):
+
+        self.wrapper = BoardWrapper(board)
+
+        self._rs_pin = rs
+        self._rw_pin = rw
         self._enable_pin = enable
 
         self._data_pins = [d0,d1,d2,d3,d4,d5,d6,d7]
@@ -53,92 +62,92 @@ class LiquidCrystal:
 
         self.begin(16, 1)
 
-    def begin(self, cols, lines, dotsize):
+    def begin(self, cols, lines, dotsize=LCD_5x8DOTS):
         if lines > 1:
             self._displayfunction |= LCD_2LINE
 
         _numlines = lines
 
-        setRowOffsets(0x00, 0x40, 0x00 + cols, 0x40 + cols)
+        self.setRowOffsets(0x00, 0x40, 0x00 + cols, 0x40 + cols)
 
         # for some 1 line displays you can select a 10 pixel high font
         if dotsize != LCD_5x8DOTS and lines == 1:
             self._displayfunction |= LCD_5x10DOTS
 
-        pinMode(self._rs_pin, OUTPUT)
+        self.wrapper.pinMode(self._rs_pin, OUTPUT)
 
         # we can save 1 pin by not using RW. Indicate by passing 255 instead of pin#
-        if self.self._rw_pin != 255:
-            pinMode(self.self._rw_pin, OUTPUT)
+        if self._rw_pin != 255:
+            self.wrapper.pinMode(self._rw_pin, OUTPUT)
 
-        pinMode(self._enable_pin, OUTPUT)
+        self.wrapper.pinMode(self._enable_pin, OUTPUT)
 
         npins = 8 if self._displayfunction & LCD_8BITMODE else 4
 
         for i in range(npins):
-            pinMode(self._data_pins[i], OUTPUT)
+            self.wrapper.pinMode(self._data_pins[i], OUTPUT)
 
         # SEE PAGE 45/46 FOR INITIALIZATION SPECIFICATION!
         # according to datasheet, we need at least 40ms after power rises above 2.7V
         # before sending commands. Arduino can turn on way before 4.5V so we'll wait 50
-        delayMicroseconds(50000)
+        self.wrapper.delayMicroseconds(50000)
         # Now we pull both RS and R/W low to begin commands
-        digitalWrite(self._rs_pin, LOW)
-        digitalWrite(_enable_pin, LOW)
+        self.wrapper.digitalWrite(self._rs_pin, LOW)
+        self.wrapper.digitalWrite(self._enable_pin, LOW)
         if self._rw_pin != 255:
-            digitalWrite(self._rw_pin, LOW)
+            self.wrapper.digitalWrite(self._rw_pin, LOW)
 
 
 
         #put the LCD into 4 bit or 8 bit mode
-        if ~ (_displayfunction & LCD_8BITMODE):
+        if ~ (self._displayfunction & LCD_8BITMODE):
             # this is according to the hitachi HD44780 datasheet
             # figure 24, pg 46
 
             # we start in 8bit mode, try to set 4 bit mode
-            write4bits(0x03)
-            delayMicroseconds(4500) # wait min 4.1ms
+            self.write4bits(0x03)
+            self.wrapper.delayMicroseconds(4500) # wait min 4.1ms
 
             # second try
-            write4bits(0x03)
-            delayMicroseconds(4500) # wait min 4.1ms
+            self.write4bits(0x03)
+            self.wrapper.delayMicroseconds(4500) # wait min 4.1ms
 
             # third go!
-            write4bits(0x03)
-            delayMicroseconds(150)
+            self.write4bits(0x03)
+            self.wrapper.delayMicroseconds(150)
 
             # finally, set to 4-bit interface
-            write4bits(0x02)
+            self.write4bits(0x02)
         else:
             # this is according to the hitachi HD44780 datasheet
             # page 45 figure 23
 
             # Send function set command sequence
-            command(LCD_FUNCTIONSET | _displayfunction)
-            delayMicroseconds(4500)  # wait more than 4.1ms
+            self.command(LCD_FUNCTIONSET | self._displayfunction)
+            self.wrapper.delayMicroseconds(4500)  # wait more than 4.1ms
 
             # second try
-            command(LCD_FUNCTIONSET | _displayfunction)
-            delayMicroseconds(150)
+            self.command(LCD_FUNCTIONSET | self._displayfunction)
+            self.wrapper.delayMicroseconds(150)
 
             # third go
-            command(LCD_FUNCTIONSET | _displayfunction)
+            self.command(LCD_FUNCTIONSET | self._displayfunction)
 
 
         # finally, set # lines, font size, etc.
-        command(LCD_FUNCTIONSET | _displayfunction)
+        self.command(LCD_FUNCTIONSET | self._displayfunction)
 
         # turn the display on with no cursor or blinking default
-        _displaycontrol = LCD_DISPLAYON | LCD_CURSOROFF | LCD_BLINKOFF
-        display()
+        self._displaycontrol = LCD_DISPLAYON | LCD_CURSOROFF | LCD_BLINKOFF
+        self.display()
 
         # clear it off
         self.clear()
 
         # Initialize to default text direction (for romance languages)
-        _displaymode = LCD_ENTRYLEFT | LCD_ENTRYSHIFTDECREMENT
+        self._displaymode = LCD_ENTRYLEFT | LCD_ENTRYSHIFTDECREMENT
         # set the entry mode
-        command(LCD_ENTRYMODESET | _displaymode)
+        self.command(LCD_ENTRYMODESET | self._displaymode)
 
     def setRowOffsets(self, row0, row1, row2, row3):
         self._row_offsets = [row0, row1, row2, row3]
@@ -147,16 +156,16 @@ class LiquidCrystal:
         # clear display, set cursor position to zero
         self.command(LCD_CLEARDISPLAY)
         # this command takes a long time!
-        delayMicroseconds(2000)
+        self.wrapper.delayMicroseconds(2000)
 
     def home(self):
         # set cursor position to zero
         self.command(LCD_RETURNHOME)
         # this command takes a long time!
-        delayMicroseconds(2000)
+        self.wrapper.delayMicroseconds(2000)
 
     def setCursor(col, row):
-        
+
         max_lines = len(row_offsets) #XXX
 
         if row >= max_lines:
@@ -229,7 +238,7 @@ class LiquidCrystal:
         self.command(LCD_SETCGRAMADDR | (location << 3))
 
         for i in range(8):
-            write(charmap[i])
+            self.write(charmap[i])
 
     # mid level commands, for sending data/cmds
 
@@ -244,11 +253,11 @@ class LiquidCrystal:
 
     def send(self, value, mode):
         """write either command or data, with automatic 4/8-bit selection"""
-        digitalWrite(self._rs_pin, mode)
+        self.wrapper.digitalWrite(self._rs_pin, mode)
 
         # if there is a RW pin indicated, set it low to Write
         if self._rw_pin != 255:
-            digitalWrite(self._rw_pin, LOW)
+            self.wrapper.digitalWrite(self._rw_pin, LOW)
 
         if self._displayfunction & LCD_8BITMODE:
             self.write8bits(value)
@@ -257,21 +266,21 @@ class LiquidCrystal:
             self.write4bits(value)
 
     def pulseEnable(self):
-        digitalWrite(_enable_pin, LOW)
-        delayMicroseconds(1);
-        digitalWrite(_enable_pin, HIGH)
-        delayMicroseconds(1)    # enable pulse must be >450ns
-        digitalWrite(_enable_pin, LOW)
-        delayMicroseconds(100); # commands need > 37us to settle
+        self.wrapper.digitalWrite(self._enable_pin, LOW)
+        self.wrapper.delayMicroseconds(1);
+        self.wrapper.digitalWrite(self._enable_pin, HIGH)
+        self.wrapper.delayMicroseconds(1)    # enable pulse must be >450ns
+        self.wrapper.digitalWrite(self._enable_pin, LOW)
+        self.wrapper.delayMicroseconds(100); # commands need > 37us to settle
 
     def write4bits(self, value):
         for i in range(4):
-            digitalWrite(self._data_pins[i], (value >> i) & 0x1)
+            self.wrapper.digitalWrite(self._data_pins[i], (value >> i) & 0x1)
 
         self.pulseEnable()
 
     def write8bits(self, value):
         for i in range(8):
-            digitalWrite(self._data_pins[i], (value >> i) & 0x1)
+            self.wrapper.digitalWrite(self._data_pins[i], (value >> i) & 0x1)
 
         self.pulseEnable()
